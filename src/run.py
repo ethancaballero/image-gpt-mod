@@ -17,6 +17,8 @@ from tqdm import tqdm
 from model import model
 from utils import iter_data, count_parameters
 
+def str2bool(v):
+  return v.lower() in ("yes", "true", "t", "1")
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
@@ -48,6 +50,8 @@ def parse_arguments():
 
     # reproducibility
     parser.add_argument("--seed", type=int, default=42, help="seed for random, np, tf")
+
+    parser.add_argument('--restore', type=str2bool, default=True)
 
     args = parser.parse_args()
     print("input args:\n", json.dumps(vars(args), indent=4, separators=(",", ":")))
@@ -90,6 +94,8 @@ def create_model(x, y, n_gpu, hparams):
     tot_loss = []
     accuracy = []
 
+    lls = []
+
     trainable_params = None
     for i in range(n_gpu):
         with tf.device("/gpu:%d" % i):
@@ -98,6 +104,9 @@ def create_model(x, y, n_gpu, hparams):
             gen_logits.append(results["gen_logits"])
             gen_loss.append(results["gen_loss"])
             clf_loss.append(results["clf_loss"])
+
+            ll = tf.reduce_sum(tf.reduce_sum(tf.nn.log_softmax(results["gen_logits"], axis=-1) * tf.one_hot(x[i], 512), -1), -1)
+            lls.append(ll)
 
             if hparams.clf:
                 tot_loss.append(results["gen_loss"] + results["clf_loss"])
@@ -110,7 +119,7 @@ def create_model(x, y, n_gpu, hparams):
                 trainable_params = tf.trainable_variables()
                 print("trainable parameters:", count_parameters())
 
-    return trainable_params, gen_logits, gen_loss, clf_loss, tot_loss, accuracy
+    return trainable_params, gen_logits, gen_loss, clf_loss, tot_loss, accuracy, lls
 
 
 def reduce_mean(gen_loss, clf_loss, tot_loss, accuracy, n_gpu):
@@ -126,10 +135,10 @@ def reduce_mean(gen_loss, clf_loss, tot_loss, accuracy, n_gpu):
         accuracy[0] /= n_gpu
 
 
-def evaluate(sess, evX, evY, X, Y, gen_loss, clf_loss, accuracy, n_batch, desc, permute=False):
+def evaluate(sess, evX, evY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, desc, permute=False):
     metrics = []
     for xmb, ymb in iter_data(evX, evY, n_batch=n_batch, truncate=True, verbose=True):
-        metrics.append(sess.run([gen_loss[0], clf_loss[0], accuracy[0]], {X: xmb, Y: ymb}))
+        metrics.append(sess.run([gen_loss[0], clf_loss[0], accuracy[0], loglikelihoods], {X: xmb, Y: ymb}))
     eval_gen_loss, eval_clf_loss, eval_accuracy = [np.mean(m) for m in zip(*metrics)]
     print(f"{desc} gen: {eval_gen_loss:.4f} clf: {eval_clf_loss:.4f} acc: {eval_accuracy:.2f}")
 
@@ -173,20 +182,21 @@ def main(args):
     y = tf.split(Y, args.n_gpu, 0)
 
     hparams = set_hparams(args)
-    trainable_params, gen_logits, gen_loss, clf_loss, tot_loss, accuracy = create_model(x, y, args.n_gpu, hparams)
+    trainable_params, gen_logits, gen_loss, clf_loss, tot_loss, accuracy, loglikelihoods = create_model(x, y, args.n_gpu, hparams)
     reduce_mean(gen_loss, clf_loss, tot_loss, accuracy, args.n_gpu)
 
     saver = tf.train.Saver(var_list=[tp for tp in trainable_params if not 'clf' in tp.name])
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)) as sess:
         sess.run(tf.global_variables_initializer())
 
-        saver.restore(sess, args.ckpt_path)
+        if args.restore:
+            saver.restore(sess, args.ckpt_path)
 
         if args.eval:
             (trX, trY), (vaX, vaY), (teX, teY) = load_data(args.data_path)
-            evaluate(sess, trX[:len(vaX)], trY[:len(vaY)], X, Y, gen_loss, clf_loss, accuracy, n_batch, "train")
-            evaluate(sess, vaX, vaY, X, Y, gen_loss, clf_loss, accuracy, n_batch, "valid")
-            evaluate(sess, teX, teY, X, Y, gen_loss, clf_loss, accuracy, n_batch, "test")
+            #evaluate(sess, trX[:len(vaX)], trY[:len(vaY)], X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "train")
+            #evaluate(sess, vaX, vaY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "valid")
+            evaluate(sess, teX, teY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "test")
 
         if args.sample:
             if not os.path.exists(args.save_dir):
