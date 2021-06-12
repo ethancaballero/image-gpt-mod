@@ -16,6 +16,7 @@ from tqdm import tqdm
 
 from model import model
 from utils import iter_data, count_parameters
+import cv2
 
 def str2bool(v):
   return v.lower() in ("yes", "true", "t", "1")
