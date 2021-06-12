@@ -137,11 +137,27 @@ def reduce_mean(gen_loss, clf_loss, tot_loss, accuracy, n_gpu):
 
 def evaluate(sess, evX, evY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, desc, permute=False):
     metrics = []
+    xs = []
+    lls = []
     for xmb, ymb in iter_data(evX, evY, n_batch=n_batch, truncate=True, verbose=True):
-        metrics.append(sess.run([gen_loss[0], clf_loss[0], accuracy[0], loglikelihoods], {X: xmb, Y: ymb}))
+        gl, cl, acc, ll = sess.run([gen_loss[0], clf_loss[0], accuracy[0], loglikelihoods[0]], {X: xmb, Y: ymb})
+        metrics.append((gl, cl, acc))
+        xs.append(xmb)
+        lls.append(ll)
     eval_gen_loss, eval_clf_loss, eval_accuracy = [np.mean(m) for m in zip(*metrics)]
     print(f"{desc} gen: {eval_gen_loss:.4f} clf: {eval_clf_loss:.4f} acc: {eval_accuracy:.2f}")
 
+    samples = np.concatenate([m[0] for m in zip(xs, lls)], 0)
+    lls = np.concatenate([m[1] for m in zip(xs, lls)], 0)
+    samples = [np.reshape(np.rint(127.5 * (clusters[s] + 1.0)), [32, 32, 3]).astype(np.uint8) for s in samples]
+
+    for pdx, (lp, p) in enumerate(zip(lls, samples)):
+        cv2.imwrite("folder/"+str(lp.item())+"__"+str(pdx)+".png", p)
+
+    """
+    for i in range(n_gpu * n_sub_batch):
+        imwrite(f"{args.save_dir}/sample_{i}.png", samples[i])
+    #"""
 
 # naive sampler without caching
 def sample(sess, X, gen_logits, n_sub_batch, n_gpu, n_px, n_vocab, clusters, save_dir):
