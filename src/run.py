@@ -135,7 +135,7 @@ def reduce_mean(gen_loss, clf_loss, tot_loss, accuracy, n_gpu):
         accuracy[0] /= n_gpu
 
 
-def evaluate(sess, evX, evY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, desc, permute=False):
+def evaluate(sess, clusters, evX, evY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, desc, permute=False):
     metrics = []
     xs = []
     lls = []
@@ -204,20 +204,20 @@ def main(args):
     saver = tf.train.Saver(var_list=[tp for tp in trainable_params if not 'clf' in tp.name])
     with tf.Session(config=tf.ConfigProto(allow_soft_placement=True, log_device_placement=False)) as sess:
         sess.run(tf.global_variables_initializer())
+        clusters = np.load(args.color_cluster_path)
 
         if args.restore:
             saver.restore(sess, args.ckpt_path)
 
         if args.eval:
             (trX, trY), (vaX, vaY), (teX, teY) = load_data(args.data_path)
-            #evaluate(sess, trX[:len(vaX)], trY[:len(vaY)], X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "train")
-            #evaluate(sess, vaX, vaY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "valid")
-            evaluate(sess, teX, teY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "test")
+            #evaluate(sess, clusters, trX[:len(vaX)], trY[:len(vaY)], X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "train")
+            #evaluate(sess, clusters, vaX, vaY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "valid")
+            evaluate(sess, clusters, teX, teY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "test")
 
         if args.sample:
             if not os.path.exists(args.save_dir):
                 os.makedirs(args.save_dir)
-            clusters = np.load(args.color_cluster_path)
             sample(sess, X, gen_logits, args.n_sub_batch, args.n_gpu, args.n_px, args.n_vocab, clusters, args.save_dir)
 
 
