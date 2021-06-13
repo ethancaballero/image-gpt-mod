@@ -54,6 +54,8 @@ def parse_arguments():
 
     parser.add_argument('--restore', type=str2bool, default=True)
 
+    parser.add_argument("--test_set_size", type=int, default=10000)
+
     args = parser.parse_args()
     print("input args:\n", json.dumps(vars(args), indent=4, separators=(",", ":")))
     return args
@@ -136,11 +138,11 @@ def reduce_mean(gen_loss, clf_loss, tot_loss, accuracy, n_gpu):
         accuracy[0] /= n_gpu
 
 
-def evaluate(sess, clusters, evX, evY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, desc, permute=False):
+def evaluate(args, sess, clusters, evX, evY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, desc, permute=False):
     metrics = []
     xs = []
     lls = []
-    for xmb, ymb in iter_data(evX, evY, n_batch=n_batch, truncate=True, verbose=True):
+    for xmb, ymb in iter_data(evX[:args.test_set_size], evY[:args.test_set_size], n_batch=n_batch, truncate=True, verbose=True):
         gl, cl, acc, ll = sess.run([gen_loss[0], clf_loss[0], accuracy[0], loglikelihoods[0]], {X: xmb, Y: ymb})
         metrics.append((gl, cl, acc))
         xs.append(xmb)
@@ -214,7 +216,7 @@ def main(args):
             (trX, trY), (vaX, vaY), (teX, teY) = load_data(args.data_path)
             #evaluate(sess, clusters, trX[:len(vaX)], trY[:len(vaY)], X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "train")
             #evaluate(sess, clusters, vaX, vaY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "valid")
-            evaluate(sess, clusters, teX, teY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "test")
+            evaluate(args, sess, clusters, teX, teY, X, Y, gen_loss, clf_loss, accuracy, loglikelihoods, n_batch, "test")
 
         if args.sample:
             if not os.path.exists(args.save_dir):
